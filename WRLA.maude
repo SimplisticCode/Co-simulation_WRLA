@@ -1,0 +1,1284 @@
+load full-maude
+
+(fmod PORTID is
+ protecting STRING .
+ sort PortId .
+ subsorts String < PortId < Oid .
+endfm)
+
+(fmod SUID is
+ protecting PORTID .
+ sort SUID .
+ subsorts String < SUID < Oid .
+endfm)
+
+(fmod EPORTID is
+    protecting SUID .
+    sort EPortId .
+    op _!_ : SUID PortId -> EPortId [ctor] .
+endfm)
+
+(fmod FMIVALUE is
+  protecting NAT + BOOL + STRING + FLOAT .
+  sort FMIValue .
+  op <_> : Nat -> FMIValue [ctor] .
+  op <_> : Bool -> FMIValue [ctor] .
+  op <_> : String -> FMIValue [ctor] .
+  op <_> : Float -> FMIValue [ctor] .
+endfm)
+
+(view FMIVALUEAsTRIV from TRIV to FMIVALUE is
+  protecting FMIVALUE .
+  sort Elt to FMIValue .
+endv)
+
+(view OIdAsTRIV from TRIV to PORTID is
+  protecting PORTID .
+  sort Elt to PortId .
+endv)
+
+(view EPortIdAsTRIV from TRIV to EPORTID is
+  protecting EPORTID .
+  sort Elt to EPortId .
+endv)
+
+(fmod PORT-LIST is
+  protecting LIST{EPortIdAsTRIV} * (sort NeList{EPortIdAsTRIV} to NePortList, sort List{EPortIdAsTRIV} to PortList) .
+endfm)
+
+(fmod OID-SET is
+  protecting SET{OIdAsTRIV} * (sort NeSet{OIdAsTRIV} to NeOidSet, sort Set{OIdAsTRIV} to OidSet) .
+endfm)
+
+(fmod PORT-SET is
+  protecting SET{EPortIdAsTRIV} * (sort NeSet{EPortIdAsTRIV} to NePortSet, sort Set{EPortIdAsTRIV} to PortSet) .
+endfm)
+
+(fmod FMIVALUESET is
+  protecting SET{FMIVALUEAsTRIV} * (sort NeSet{FMIVALUEAsTRIV} to NeFMIValueSet, sort Set{FMIVALUEAsTRIV} to FMIValueSet) .
+endfm)
+
+(fmod PAIR{X :: TRIV, Y :: TRIV} is 
+    sort Pair{X, Y} . 
+    op <_;_> : X$Elt Y$Elt -> Pair{X, Y} . 
+    op 1st : Pair{X, Y} -> X$Elt . 
+    op 2nd : Pair{X, Y} -> Y$Elt . 
+    var A : X$Elt . 
+    var B : Y$Elt . 
+    eq 1st(< A ; B >) = A . 
+    eq 2nd(< A ; B >) = B . 
+endfm)
+
+(fmod PORTVALUE is
+    protecting PAIR{Nat, FMIVALUEAsTRIV} * (sort Pair{Nat, FMIVALUEAsTRIV} to PortValueAndTime) .
+endfm) 
+
+(fmod LOCALSTATE is
+    protecting MAP{String, FMIVALUEAsTRIV} * (sort Map{String, FMIVALUEAsTRIV} to LocalState) .
+endfm) 
+
+(view PortValueAndTimeAsTRIV from TRIV to PORTVALUE is
+  protecting PORTVALUE .
+  sort Elt to PortValueAndTime .
+endv)
+
+(fmod PORTVALUEMAP is
+    protecting MAP{EPortIdAsTRIV, PortValueAndTimeAsTRIV} * (sort Map{EPortIdAsTRIV, PortValueAndTimeAsTRIV} to PortValueMap) .
+endfm) 
+
+(fmod INDEX-MAP is
+    *** Tarjan
+    protecting MAP{EPortIdAsTRIV, Nat} * (sort Map{EPortIdAsTRIV, Nat} to IndexMap) .
+endfm) 
+
+
+(view PortListAsTRIV from TRIV to PORT-LIST is
+  protecting PORT-LIST .
+  sort Elt to PortList .
+endv)
+
+(view IndexMapAsTRIV from TRIV to PORT-LIST is
+  protecting INDEX-MAP .
+  sort Elt to IndexMap .
+endv)
+
+(fmod PORTLIST-PAIR is
+    protecting PAIR{PortListAsTRIV, PortListAsTRIV} * (sort Pair{PortListAsTRIV, PortListAsTRIV} to PortListPair) .
+endfm) 
+
+(fmod SCC-MAP is
+    protecting MAP{Nat ,PortListAsTRIV} * (sort Map{Nat, PortListAsTRIV} to SCCMap) .
+endfm) 
+
+(fmod ALGEBRAICLOOP is
+    protecting PORT-SET .
+    sort AlgebraicLoop LoopType .
+    ops feedthrough reactivity : -> LoopType [ctor] . 
+    op AlgebraicLoop:_Type:_ : PortSet LoopType -> AlgebraicLoop [ctor] . 
+endfm )
+
+(view ALGEBRAICLOOPAsTRIV from TRIV to ALGEBRAICLOOP is
+  protecting ALGEBRAICLOOP .
+  sort Elt to AlgebraicLoop .
+endv)
+
+(fmod ALGEBRAICLOOPSET is
+  protecting SET{ALGEBRAICLOOPAsTRIV} * (sort NeSet{ALGEBRAICLOOPAsTRIV} to NeALSet, sort Set{ALGEBRAICLOOPAsTRIV} to AlgebraicLoopSet) .
+endfm)
+
+(omod Ports is 
+ protecting PORT-LIST + OID-SET + PORT-SET + PORTVALUEMAP .
+ sorts Contract PortStatus Connection PortType .
+ op _==>_ : EPortId EPortId -> Connection [ctor format(niy! d d d)] .
+ subsort Connection < Configuration .
+
+ class Port | value : FMIValue, type : PortType, time : Nat, status : PortStatus . 
+ class Input | contract : Contract .
+ class Output | dependsOn : OidSet .
+ subclasses Input Output < Port . 
+ ops delayed reactive noContract : -> Contract [ctor] .   *** d = delayed, r = Reactive.
+ ops integer string real boolean : -> PortType [ctor] . 
+ ops Def Undef : -> PortStatus [ctor] .
+
+ op _in_ : Connection Configuration -> Bool . 
+ op elems : PortList PortSet -> PortSet .
+
+ var PORT  : EPortId .
+ var CONF : Configuration .
+ var CON : Connection .
+ var STACK : PortList .
+ var PORTSET : PortSet .
+
+ eq elems(nil, PORTSET) = PORTSET .
+ eq elems(PORT STACK, PORTSET) = elems(STACK, (PORT, PORTSET)) .
+
+ eq CON in CON CONF = true .
+ eq CON in CONF = false [owise] .
+
+endom)
+
+(omod Algorithm is 
+ protecting Ports + ALGEBRAICLOOPSET .
+ sorts ActionType FMIActionType ComplexActionType ActionList Action  .
+ subsort Action < ActionList .
+    
+ *** Types
+ ops CreateExp EnterInitialization ExitInitialization Terminate FreeInstance Unload : -> FMIActionType [ctor] . 
+ ops Set Get Step Save : -> ActionType [ctor] . 
+ ops StepNegotiation Loop : -> ComplexActionType [ctor] . 
+ op fmiEvent:_SUs:_ : FMIActionType NeOidSet -> Action [ctor format(nir! d d d d)] .
+ op portEvent:_SU:_PId:_ : ActionType SUID OidSet -> Action [ctor format(nib! d d d d d d)] .
+ op stepEvent:_StepSize:_ : SUID NzNat -> Action [ctor format(nig! d d d d)] .
+ op complexEvent:_SaveSUs:_RestoreSUs:_Actions:_ : ComplexActionType OidSet OidSet ActionList -> Action [ctor format(niy! d d d d d d ni! niy!)] .
+ 
+ *** Operations
+ op _memberOf_ : EPortId AlgebraicLoopSet -> Bool . 
+ op getSUs : PortSet OidSet -> OidSet .
+ op emptyList : -> ActionList [ctor] .
+ op _;_ : ActionList ActionList -> ActionList [ctor assoc id: emptyList] .
+
+ vars SU PORTID : Oid .
+ var SUIDs : OidSet .
+ var LOOPS : AlgebraicLoopSet .
+ var PORT : EPortId .
+ var LOOPTYPE : LoopType .
+ var PORTSET : PortSet .
+ vars ENDTIME STEPSIZE : NzNat .
+
+ eq PORT memberOf ((AlgebraicLoop: (PORT , PORTSET)  Type: LOOPTYPE) , LOOPS) = true .
+ eq PORT memberOf LOOPS = false [owise] .
+
+ eq getSUs(empty, SUIDs) = SUIDs .
+ ceq getSUs(((SU ! PORTID), PORTSET), SUIDs) = getSUs(PORTSET, SUIDs) if SU in SUIDs .
+ eq getSUs(((SU ! PORTID), PORTSET), SUIDs) = getSUs(PORTSET, (SU , SUIDs)) [owise] .
+
+class SimulationData | 
+    SNSet : OidSet,
+    defaultStepSize : NzNat,
+    actualStepSize : NzNat,
+    unsolvedSCC : AlgebraicLoopSet,
+    solvedSCC : AlgebraicLoopSet,
+    guessOn : PortSet,
+    values : PortValueMap,
+    simulationTime : Nat,
+    suids : NeOidSet .
+
+class AlgorithmData | 
+    CosimStep : ActionList, 
+    Initialization : ActionList,
+    Termination : ActionList,
+    endTime : NzNat .
+
+class SearchingData | 
+    guesses : PortValueMap,
+    values : PortValueMap,
+    savedSUs : Configuration,
+    algorithm : ActionList,
+    actualStepSize : NzNat .
+
+  op initialOrchestrationData : NzNat AlgebraicLoopSet NeOidSet -> Object .
+  eq initialOrchestrationData(STEPSIZE, LOOPS, SUIDs) =
+    < "Orchestrator" : SimulationData | 
+      SNSet : empty,
+      defaultStepSize : STEPSIZE,
+      actualStepSize : STEPSIZE,
+      unsolvedSCC : LOOPS,
+      solvedSCC : empty,
+      guessOn : empty,
+      values : empty,
+      simulationTime : 0,
+      suids : SUIDs 
+    > .
+
+  op initialAlgorithmData : NzNat  -> Object .
+  eq initialAlgorithmData(ENDTIME) =
+    < "Algorithm" : AlgorithmData | 
+      CosimStep : emptyList, 
+      Initialization : emptyList,
+      Termination : emptyList,
+      endTime : ENDTIME > .
+
+endom)
+
+(omod SimulationUnit is
+   protecting Algorithm + RANDOM + STRING + LOCALSTATE .
+   sort fmiState StepState .
+   
+   *** The different states of the FMI standard
+   ops Instantiated ExperimentSetup Initialize Simulation Terminated InstanceFreed Unloaded : -> fmiState [ctor] . 
+
+   ***Classes
+   class SU |
+     path : String, 
+     time : Nat, 
+     inputs : Configuration, ***Input ports
+     outputs : Configuration, ***Output ports
+     canReject : Bool, 
+     fmistate : fmiState,
+     parameters : LocalState,
+     localState : LocalState .
+
+   op askStepSize : Object NzNat -> NzNat .
+   op feedthroughSatisfied : OidSet Configuration Nat -> Bool .
+   op allDef : Configuration Nat -> Bool .
+   op undefPorts : Configuration Nat -> Configuration .
+   op allInputsDef : Configuration Nat Nat -> Bool .
+   op allInputsSet : Configuration -> Bool .
+   op canStep : Nat NzNat Configuration Configuration -> Bool .
+   op getAction : Object OidSet -> Object .
+   op setAction : Object OidSet FMIValue Nat -> Object .
+   op stepAction : Object NzNat -> Object .
+   ops getAllReactivePorts getAllPorts : Configuration PortSet -> PortSet .
+   op commonTime : OidSet Configuration NzNat -> Bool . 
+
+   vars SU1 SU2 : SUID .
+   vars PORTID INPUT OUTPUT : PortId .
+   vars TIME SUTIME VALVESTATE WATERLEVEL : Nat .
+   vars CONF INPUTS OUTPUTS SAVEDSUs : Configuration .
+   var VALUE : FMIValue .
+   var EVALUE : PortValueAndTime .
+   var PORTSTATUS : PortStatus .
+   vars FEEDTHROUGH PORTS SUIDs : OidSet .
+   vars FUTURETIME STEP : NzNat .
+   var PORTSET : PortSet .
+   vars VALUEMAP PORTVALUES GUESSES : PortValueMap .
+   var CONTRACT : Contract .
+   var EPORTID : EPortId .
+
+   *** Get All ports in the scenario:
+  ceq getAllPorts(< SU1 : SU | inputs : (< INPUT : Input | > INPUTS) > CONF, PORTSET) = 
+    getAllPorts(< SU1 : SU | inputs : INPUTS > CONF,  ((SU1 ! INPUT) , PORTSET))
+    if not (SU1 ! INPUT) in PORTSET .
+
+  ceq getAllPorts(< SU1 : SU | outputs : (< OUTPUT : Output | > OUTPUTS) > CONF, PORTSET) = 
+    getAllPorts(< SU1 : SU | outputs : OUTPUTS > CONF, ((SU1 ! OUTPUT) , PORTSET))
+      if not (SU1 ! OUTPUT) in PORTSET .
+
+  eq getAllPorts(CONF, PORTSET) = PORTSET [owise] . 
+
+  eq commonTime(empty, CONF, TIME) = true .
+  eq commonTime((SU1, SUIDs), < SU1 : SU | time : TIME > CONF, TIME) = commonTime(SUIDs, CONF, TIME) .
+  eq commonTime(SUIDs, CONF, TIME) = false [owise] .
+
+  ceq getAllReactivePorts(< SU1 : SU | inputs : (< INPUT : Input | contract : reactive > INPUTS) > CONF, PORTSET) = getAllReactivePorts(< SU1 : SU | inputs : INPUTS > CONF, ((SU1 ! INPUT) , PORTSET))
+    if not (SU1 ! INPUT) in PORTSET .
+  eq getAllReactivePorts(CONF, PORTSET) = PORTSET [owise] . 
+
+   *** Checks if all feedthrough constraints are satisfied
+   eq feedthroughSatisfied(empty, CONF, TIME) = true .
+   eq feedthroughSatisfied((PORTID , FEEDTHROUGH), < PORTID : Input | status : Undef > CONF, TIME) = false .
+   ceq feedthroughSatisfied((PORTID , FEEDTHROUGH), < PORTID : Input | time : TIME > CONF, SUTIME) = false 
+    if TIME =/= SUTIME .
+   eq feedthroughSatisfied((PORTID , FEEDTHROUGH), < PORTID : Input | time : TIME, status : Def > CONF, TIME) =  feedthroughSatisfied(FEEDTHROUGH, CONF, TIME) .
+
+   eq allDef(none, TIME) = true .
+   eq allDef(< PORTID : Port | status : PORTSTATUS, time : TIME > CONF, TIME) = PORTSTATUS == Def and allDef(CONF, TIME) .
+
+   eq allInputsDef(none, SUTIME, FUTURETIME) = true .
+   eq allInputsDef(< PORTID : Input | time : TIME, contract : CONTRACT, status : PORTSTATUS > CONF, SUTIME, FUTURETIME) = PORTSTATUS == Def and ((CONTRACT == reactive and TIME == FUTURETIME) or (CONTRACT == delayed and TIME == SUTIME))
+        and allInputsDef(CONF, SUTIME, FUTURETIME) .
+
+   eq undefPorts(none, TIME) = none .
+   eq undefPorts(< PORTID : Port | > CONF, TIME) =  < PORTID : Port | value : < random(TIME) >, status : Undef, time : TIME > undefPorts(CONF, TIME) .
+
+   eq allInputsSet(none) = true .
+   eq allInputsSet(< SU1 : SU | inputs : INPUTS > CONF) = allDef(INPUTS, 0) and allInputsSet(CONF) .
+
+   eq canStep(SUTIME, FUTURETIME, INPUTS, OUTPUTS) = 
+      allInputsDef(INPUTS, SUTIME, FUTURETIME) and allDef(OUTPUTS, SUTIME) . 
+
+   *** For the moment we allow all steps - should updated to reflect the nondeterminism of the step negotiation!
+   eq askStepSize(< SU1 : SU | >, STEP) = STEP .
+
+  *** Updates the time and status of the outputs
+  eq getAction(< SU1 : SU | >, empty) = < SU1 : SU | > .
+  eq getAction(< SU1 : SU | time : TIME, outputs : (< OUTPUT : Output | > OUTPUTS) >, (OUTPUT , PORTS)) = 
+    getAction(< SU1 : SU | outputs : (< OUTPUT : Output | time : TIME, status : Def > OUTPUTS) >, PORTS) .
+
+
+  eq setAction(< SU1 : SU | > , empty, VALUE, TIME) =  < SU1 : SU | > .
+  eq setAction(< SU1 : SU | inputs : (< INPUT : Input | > INPUTS) > , (INPUT , PORTS), VALUE, TIME) = 
+            setAction(< SU1 : SU | inputs : (< INPUT : Input | time : TIME, value : VALUE,  status : Def > INPUTS) >, PORTS, VALUE, TIME) .
+
+  *** Updates the time and the status of the outputs
+  ceq stepAction(< SU1 : SU | time : TIME, outputs : OUTPUTS >, STEP) 
+    = < SU1 : SU | time : FUTURETIME, outputs : undefPorts(OUTPUTS, FUTURETIME) > 
+    if FUTURETIME := TIME + STEP .
+
+
+  *** Not done yet - need to specify all properties
+  op restoreSUs : Configuration Configuration -> Configuration .
+  eq restoreSUs(none, CONF) = CONF .
+  eq restoreSUs(< SU1 : SU | >  SAVEDSUs, < SU1 : SU | >  CONF) = restoreSUs(SAVEDSUs, CONF) .
+
+  op hasConverged : PortSet PortValueMap PortValueMap -> Bool . 
+  eq hasConverged(empty, PORTVALUES, GUESSES) = true .
+  eq hasConverged((EPORTID, PORTSET), ((EPORTID |-> EVALUE), PORTVALUES), ((EPORTID |-> EVALUE), GUESSES)) =    hasConverged(PORTSET, PORTVALUES, GUESSES) .
+  eq hasConverged(PORTSET, PORTVALUES, GUESSES) = false [owise] .
+
+  op saveSUs : OidSet Configuration -> Configuration .
+  eq saveSUs(empty, CONF) = none .
+  eq saveSUs((SU1, SUIDs), < SU1 : SU | > CONF) = < SU1 : SU | > saveSUs(SUIDs, CONF) .
+
+
+  op step : Object NzNat -> StepState [ctor] .
+  subsort Object < StepState .
+
+endom)
+
+(omod LOOPSolver is 
+  protecting SimulationUnit .
+    sorts Pair .
+
+    op <_;_> : ActionList Configuration -> Pair [ctor] .
+    ops solveLoop solveLoopConf : Configuration AlgebraicLoop  -> Configuration . 
+    op breakLoop : PortSet Configuration LoopType -> Configuration .
+    op containsCycle : AlgebraicLoopSet -> Bool . 
+    op loopStep : PortSet  Configuration ActionList -> Pair .
+    op solveLoopAlgorithm : Configuration AlgebraicLoop -> ActionList .
+
+    var OCH : Oid .
+    var LOOPS : AlgebraicLoopSet .  
+    var LOOPTYPE : LoopType .
+    vars CONF OUTPUTS INPUTS CONF1 : Configuration .
+    vars INPUT OUTPUT : PortId .
+    vars ID1 ID2 : SUID .
+    vars PSet GSet : PortSet .
+    vars ALGO LOOPSOLVINGALGO : ActionList .
+    var TIME T1 : Nat .
+    var VALUE : FMIValue .
+    vars STEP FUTURETIME : NzNat .
+    var FEEDTHROUGH : OidSet  .
+    var CONTRACT : Contract .
+    var SUIDS : OidSet  .
+    var SUINSTANCE : Object .
+    var EVENT : Action .
+
+    op fst : Pair -> ActionList .
+    op snd : Pair -> Configuration .
+
+    eq fst(< ALGO ; CONF >) = ALGO . 
+    eq snd(< ALGO ; CONF >) = CONF . 
+
+   *** Does the scenario contain any loop
+   eq containsCycle(empty) = false .
+   eq containsCycle(LOOPS) = true [owise] .
+
+   ceq solveLoop(CONF 
+          < OCH : AlgorithmData | CosimStep : ALGO > , 
+          AlgebraicLoop: PSet Type: LOOPTYPE) = 
+        CONF1 < OCH : AlgorithmData | CosimStep : (ALGO ; EVENT) >
+        if < LOOPSOLVINGALGO ; CONF1 > := loopStep(PSet, breakLoop(PSet, CONF, LOOPTYPE), emptyList)
+        /\ SUIDS := getSUs(PSet, empty) 
+        /\ EVENT := complexEvent: Loop SaveSUs: SUIDS RestoreSUs: SUIDS Actions: LOOPSOLVINGALGO .
+
+  eq solveLoopConf(CONF, AlgebraicLoop: PSet Type: LOOPTYPE) = snd(loopStep(PSet, breakLoop(PSet, CONF, LOOPTYPE), emptyList)) .
+
+  ceq solveLoopAlgorithm(CONF, AlgebraicLoop: PSet Type: LOOPTYPE) = 
+    complexEvent: Loop SaveSUs: SUIDS RestoreSUs: SUIDS Actions: fst(loopStep(PSet, breakLoop(PSet, CONF, LOOPTYPE), emptyList))
+        if SUIDS := getSUs(PSet, empty) .
+
+    *** Forget All Connections depending on type of loop 
+    ceq breakLoop(((ID1 ! INPUT) , PSet),   
+                     < ID1 : SU | inputs : (< INPUT : Input | contract : CONTRACT > INPUTS) > 
+                     < ID2 : SU | outputs : (< OUTPUT : Output | > OUTPUTS) > 
+                     (ID2 ! OUTPUT ==> ID1 ! INPUT) 
+                     < OCH : SimulationData | guessOn : GSet > CONF, LOOPTYPE) = 
+                        breakLoop(((ID1 ! INPUT) , PSet), < ID1 : SU | > < ID2 : SU | > 
+                        < OCH : SimulationData | guessOn : ((ID1 ! INPUT) , GSet) > CONF, LOOPTYPE) 
+                        if (LOOPTYPE == reactivity and CONTRACT == reactive) or (LOOPTYPE == feedthrough and CONTRACT == delayed) .
+
+    eq breakLoop(PSet, CONF, LOOPTYPE) = CONF [owise] .
+
+*** Use valuesToSet
+    *** Set value using Guess
+    ceq loopStep(((ID1 ! INPUT) , PSet), 
+                    < ID1 : SU | time : TIME, inputs : (< INPUT : Input | time : T1, contract : CONTRACT > INPUTS) >
+                    < OCH : SimulationData | guessOn : ((ID1 ! INPUT) , GSet), actualStepSize : STEP > 
+                      CONF, ALGO) = 
+            loopStep(PSet, SUINSTANCE < OCH : SimulationData | guessOn : GSet > CONF, (ALGO ; EVENT)) 
+                    if VALUE := < random(TIME) >
+                    /\ FUTURETIME := T1 + STEP
+                    /\ SUINSTANCE := < ID1 : SU | time : TIME, inputs : (< INPUT : Input | time : FUTURETIME, value : VALUE > INPUTS) >  
+                    /\ EVENT :=  portEvent: Set SU: ID1 PId: INPUT
+                    /\ (CONTRACT == reactive and T1 == TIME) or (CONTRACT == delayed and TIME == FUTURETIME) .
+
+    *** Set value on input
+    ceq loopStep(((ID1 ! INPUT) , PSet), 
+                      < ID1 : SU | inputs : (< INPUT : Input | time : TIME, contract : CONTRACT > INPUTS) > 
+                      < ID2 : SU | outputs : (< OUTPUT : Output | value : VALUE, time : FUTURETIME, status : Def > OUTPUTS) > (ID2 ! OUTPUT ==> ID1 ! INPUT) CONF, ALGO) = 
+              loopStep(PSet, SUINSTANCE < ID2 : SU | > (ID2 ! OUTPUT ==> ID1 ! INPUT) CONF, (ALGO ; EVENT)) 
+                    if EVENT :=  portEvent: Set SU: ID1 PId: INPUT
+                    /\ SUINSTANCE := setAction(< ID1 : SU | >, INPUT, VALUE, FUTURETIME)
+                    /\ FUTURETIME > TIME .
+
+    *** Get output value
+    ceq loopStep(((ID1 ! OUTPUT) , PSet), 
+                    < ID1 : SU | time : TIME, outputs : (< OUTPUT : Output | status : Undef, dependsOn : FEEDTHROUGH > OUTPUTS), inputs : INPUTS > CONF, ALGO) = 
+                    loopStep(PSet, SUINSTANCE CONF, (ALGO ; EVENT)) 
+                  if EVENT :=  portEvent: Get SU: ID1 PId: OUTPUT
+                  /\ SUINSTANCE := getAction(< ID1 : SU | >, OUTPUT) 
+                  /\ feedthroughSatisfied(FEEDTHROUGH, INPUTS, TIME) .
+
+    *** Step
+    ceq loopStep(((ID1 ! OUTPUT) , PSet), < ID1 : SU | time : TIME, outputs : OUTPUTS, inputs : INPUTS > 
+     < OCH : SimulationData | actualStepSize : STEP > CONF, ALGO) = 
+                  loopStep(((ID1 ! OUTPUT) , PSet), SUINSTANCE < OCH : SimulationData | > CONF, (ALGO ; EVENT))
+                  if EVENT := stepEvent: ID1 StepSize: STEP
+                  /\ SUINSTANCE := stepAction(< ID1 : SU | >, STEP) 
+                  /\ FUTURETIME := TIME + STEP
+                  /\ canStep(TIME, FUTURETIME, INPUTS, OUTPUTS) .
+
+    eq loopStep(empty,CONF, ALGO) = < ALGO ; CONF  > .
+
+endom)
+
+(omod StepFinder is
+  protecting LOOPSolver .
+  sorts findStepPair .
+      
+  op <_++_> : NzNat ActionList -> findStepPair [ctor] .
+
+  *** Current State x Initial State -> Nat
+  op findStep : OidSet Configuration Configuration ActionList -> findStepPair .
+  op stepFindingDone : OidSet Configuration NzNat -> Bool .
+
+   vars ID1 ID2 : SUID .
+   var OCH : Oid .
+   vars FEEDTHROUGH SUIDs : OidSet .
+   vars INPUT OUTPUT : PortId .
+   vars TIME INPUTTIME OUTPUTTIME : Nat .
+   var VALUE : FMIValue .
+   vars STEPSIZE FUTURETIME FUTURETIME1 MINSTEP : NzNat .
+   vars INPUTS OUTPUTS INPUTS1 CONF SAVEDCONF CONF1 : Configuration . 
+   var ALGO : ActionList .
+   var LOOP : AlgebraicLoop .  
+   var LOOPS SOLVEDLOOPS : AlgebraicLoopSet .  
+   var SUINSTANCE : Object .
+   var EVENT : Action .
+
+   eq stepFindingDone(empty, CONF, STEPSIZE) = true .
+   eq stepFindingDone((ID1 , SUIDs), < ID1 : SU | time : FUTURETIME1 > CONF, STEPSIZE) = FUTURETIME1 == STEPSIZE and stepFindingDone(SUIDs, CONF, STEPSIZE) .
+
+  *** Get case (only on reactive outputs)
+  ceq findStep((ID1 , ID2 , SUIDs), 
+                    < ID2 : SU | time : TIME, outputs : (< OUTPUT : Output | status : Undef, dependsOn : FEEDTHROUGH > OUTPUTS), inputs : INPUTS1 >
+                    < ID1 : SU | inputs : (< INPUT : Input | contract : reactive > INPUTS) > (ID2 ! OUTPUT ==> ID1 ! INPUT) CONF, SAVEDCONF, ALGO) = 
+                    findStep((ID1 , ID2 , SUIDs), SUINSTANCE  < ID1 : SU | > (ID2 ! OUTPUT ==> ID1 ! INPUT) CONF, SAVEDCONF, ALGO ; EVENT) 
+                    if feedthroughSatisfied(FEEDTHROUGH, INPUTS1, TIME) 
+                    /\ SUINSTANCE := getAction(< ID2 : SU | >, OUTPUT)
+                    /\ EVENT := portEvent: Get SU: ID2 PId: OUTPUT .
+
+  *** Set case (only on reactive Inputs)
+  ceq findStep((ID1 , ID2 , SUIDs), 
+      < ID1 : SU | inputs : (< INPUT : Input | time : INPUTTIME, contract : reactive > INPUTS) > 
+      < ID2 : SU | outputs : (< OUTPUT : Output | value : VALUE, time : OUTPUTTIME, status : Def > OUTPUTS) > 
+      (ID2 ! OUTPUT ==> ID1 ! INPUT) CONF, SAVEDCONF, ALGO) 
+      = 
+      findStep((ID1, ID2, SUIDs), SUINSTANCE < ID2 : SU | > (ID2 ! OUTPUT ==> ID1 ! INPUT) CONF, SAVEDCONF, ALGO ; EVENT) 
+      if INPUTTIME < OUTPUTTIME 
+      /\ SUINSTANCE := setAction(< ID1 : SU | >, INPUT, VALUE, OUTPUTTIME) 
+      /\ EVENT := portEvent: Set SU: ID1 PId: INPUT .
+
+  ***Stepping case
+  ceq findStep((ID1 , SUIDs), < ID1 : SU | time : TIME, outputs : OUTPUTS, inputs : INPUTS > 
+      < OCH : SimulationData | actualStepSize : STEPSIZE > CONF, SAVEDCONF, ALGO) 
+      = findStep((ID1 , SUIDs), SUINSTANCE < OCH : SimulationData | actualStepSize : FUTURETIME >  CONF, SAVEDCONF, ALGO ; EVENT)
+        if FUTURETIME := askStepSize(< ID1 : SU | >, STEPSIZE) 
+        /\ SUINSTANCE := stepAction(< ID1 : SU | >, FUTURETIME) 
+        /\ EVENT := stepEvent: ID1 StepSize: STEPSIZE 
+        /\ canStep(TIME, (TIME + STEPSIZE), INPUTS, OUTPUTS) .
+
+  *** Restart search and and update step size for next iteration of search
+  ceq findStep((ID1 , ID2 , SUIDs),  < ID1 : SU | time : FUTURETIME > 
+                        < ID2 : SU | time : FUTURETIME1 > CONF, SAVEDCONF 
+                        < OCH : SimulationData | actualStepSize : STEPSIZE >, ALGO) = 
+              findStep((ID1 , ID2 , SUIDs), CONF1, CONF1, ALGO)   
+                    if FUTURETIME =/= FUTURETIME1 
+                    /\ MINSTEP := min(FUTURETIME, FUTURETIME1) 
+                    /\ CONF1 :=  SAVEDCONF < OCH : SimulationData | actualStepSize : MINSTEP > . 
+
+
+  ceq findStep(SUIDs, CONF < OCH : SimulationData | actualStepSize : STEPSIZE >, SAVEDCONF, ALGO) = < STEPSIZE ++ ALGO > 
+    if stepFindingDone(SUIDs, CONF, STEPSIZE) . 
+
+endom)
+
+load StepFinder 
+
+(fmod ENVIRONMENT is
+  protecting SCC-MAP + INDEX-MAP + SimulationUnit .
+  sort Environment .
+  op env : PortList SCCMap Nat Nat IndexMap -> Environment [ctor] .
+    *** Get fields in Environment
+    op getSN : Environment -> Nat .
+    op getSCCN : Environment -> Nat .
+    op getStack : Environment -> PortList .
+    op getSCC : Environment -> SCCMap .
+    op getIM : Environment -> IndexMap .
+
+    var IM : IndexMap .
+    var STACK : PortList .
+    var SCCs : SCCMap .
+    vars INDEX SCCNUMBER : Nat .
+
+    *** Projection function
+    eq getStack(env(STACK, SCCs, INDEX, SCCNUMBER, IM)) = STACK .
+    eq getSN(env(STACK, SCCs, INDEX, SCCNUMBER, IM)) = INDEX .
+    eq getSCC(env(STACK, SCCs, INDEX, SCCNUMBER, IM)) = SCCs .
+    eq getIM(env(STACK, SCCs, INDEX, SCCNUMBER, IM)) = IM .
+    eq getSCCN(env(STACK, SCCs, INDEX, SCCNUMBER, IM)) = SCCNUMBER .
+
+endfm) 
+
+(view ENVAsTRIV from TRIV to ENVIRONMENT is
+  sort Elt to Environment .
+endv)
+
+(fmod DFSResult-PAIR is
+    protecting PAIR{ENVAsTRIV, Nat} * (sort Pair{ENVAsTRIV, Nat} to DFSPair) .
+endfm) 
+
+(omod ScenarioEnvironment is
+    protecting SimulationUnit +  PORTLIST-PAIR + DFSResult-PAIR .
+    op findSuccesors : EPortId Configuration -> PortSet .
+    op succesors : EPortId Configuration PortSet -> PortSet .
+    op split : EPortId PortList PortListPair -> PortListPair .
+    op addStackIncr : EPortId Environment -> Environment .
+    op createIndexMap : PortSet IndexMap -> IndexMap .
+
+    *** Projection functions
+    op getLoops : Environment Configuration -> AlgebraicLoopSet .
+    op isReactiveLoop : PortSet Configuration -> Bool .
+
+    op nodeHasBeenVisited : EPortId Environment -> Bool .
+    op createAlgebraic : SCCMap Configuration AlgebraicLoopSet -> AlgebraicLoopSet .
+    op setInfty : PortList IndexMap -> IndexMap .
+
+    vars ID1 ID2 : SUID .
+    vars INPUT OUTPUT : PortId .
+    vars PORT : EPortId .
+    var PORTSET : PortSet .
+    var FT : OidSet .
+    var IM : IndexMap .
+    vars CONF INPUTS OUTPUTS : Configuration .
+    vars STACK STACK1 STACK2 : PortList .
+    var SCCs : SCCMap .
+    var LOOPS : AlgebraicLoopSet .
+    var NONZERO : NzNat .
+    vars PINDEX INDEX SCCNUMBER : Nat .
+    var ENV : Environment .
+    var PORTPAIR : PortListPair .
+
+    *** Add the element to the stack, update the INDEX of the node and increments the counter
+    eq addStackIncr(PORT, env(STACK, SCCs, INDEX, SCCNUMBER, ((PORT |-> PINDEX) , IM))) = env(PORT STACK, SCCs, (INDEX + 1), SCCNUMBER, insert(PORT, INDEX, IM)) .
+
+    *** The node has been visited if its INDEX is non-zero
+    eq nodeHasBeenVisited(PORT, env(STACK, SCCs, INDEX, SCCNUMBER, ((PORT |-> NONZERO) , IM))) = true .
+    eq nodeHasBeenVisited(PORT, ENV) = false [owise] .
+  
+    *** Transform environment to Algebraic Loops
+    eq getLoops(env(STACK, SCCs , INDEX, SCCNUMBER, IM), CONF) = createAlgebraic(SCCs, CONF, empty) .
+
+    ***Encode everything as algebraic loops:
+    *** No more SCC to look at
+    eq createAlgebraic(empty, CONF, LOOPS) = LOOPS .
+    ceq createAlgebraic(((INDEX |-> STACK), SCCs), CONF, LOOPS) = createAlgebraic(SCCs, CONF, ((AlgebraicLoop: PORTSET Type: reactivity), LOOPS))  
+        if PORTSET := elems(STACK, empty)
+        /\ size(STACK) > 1 and isReactiveLoop(PORTSET, CONF) .
+
+    ceq createAlgebraic(((INDEX |-> STACK), SCCs), CONF, LOOPS) = createAlgebraic(SCCs, CONF, ((AlgebraicLoop: PORTSET Type: feedthrough), LOOPS))  
+        if PORTSET := elems(STACK, empty)
+        /\ size(STACK) > 1 and not(isReactiveLoop(PORTSET, CONF)) .
+    
+    *** Trivial SCC should be forgotten
+    eq createAlgebraic(((INDEX |-> PORTSET) , SCCs), CONF, LOOPS) = createAlgebraic(SCCs, CONF, LOOPS) .
+
+    *** Check type of SCC - one reactivity input makes it Reactive
+    eq isReactiveLoop(((ID1 ! INPUT) , PORTSET), < ID1 : SU | inputs : (< INPUT : Input | contract : reactive > INPUTS) > CONF) = true .
+    eq isReactiveLoop(PORTSET, CONF) = false [owise] .
+
+    *** Sets all nodes in the stack to infinity - to ensure they do not interfere with the future calculations
+    eq setInfty(nil, IM) = IM .
+    eq setInfty(PORT STACK, ((PORT |-> NONZERO), IM)) = setInfty(STACK, insert(PORT, 100000, IM)) .
+
+    *** Create the initial INDEX map - all INDEX are 0
+    eq createIndexMap(empty, IM) = IM .
+    eq createIndexMap((PORT , PORTSET), ((PORT |-> NONZERO) , IM)) = createIndexMap(PORTSET, insert(PORT, NONZERO, IM)) .
+    eq createIndexMap((PORT , PORTSET), IM) = createIndexMap(PORTSET, insert(PORT, 0, IM)) [owise] .
+
+    *** Splits the stack at PORT
+    eq split(PORT, nil, PORTPAIR) = PORTPAIR . *** Nothing is on the stack
+    ceq split(PORT, STACK, < STACK1 ; STACK2 > ) = < (STACK1 PORT) ; (tail(STACK) STACK2) > if PORT := head(STACK) .
+    eq split(PORT, STACK, < STACK1 ; STACK2 > ) = split(PORT, tail(STACK), < STACK1 head(STACK) ; STACK2 > ) [owise] .
+
+    *** Wrapper method
+    eq findSuccesors(PORT, CONF) = succesors(PORT, CONF, empty) .
+
+    *** Output
+    ceq succesors(ID2 ! OUTPUT, 
+                < ID1 : SU | inputs : (< INPUT : Input | > INPUTS) > 
+                < ID2 : SU | outputs : (< OUTPUT : Output | > OUTPUTS) > 
+                         (ID2 ! OUTPUT ==> ID1 ! INPUT) CONF, PORTSET) = 
+                    succesors(ID2 ! OUTPUT, < ID1 : SU | > < ID2 : SU | > 
+                            (ID2 ! OUTPUT ==> ID1 ! INPUT) CONF, ((ID1 ! INPUT) , PORTSET)) 
+                    if not (ID1 ! INPUT) in PORTSET .
+
+    *** Input - feed through
+    ceq succesors((ID1 ! INPUT),
+                    < ID1 : SU | inputs : (< INPUT : Input | > INPUTS), outputs : (< OUTPUT : Output | dependsOn : (INPUT , FT) > OUTPUTS) > CONF, PORTSET) 
+                    = 
+                    succesors((ID1 ! INPUT), < ID1 : SU | > CONF, ((ID1 ! OUTPUT) , PORTSET)) 
+                    if not (ID1 ! OUTPUT) in PORTSET .
+
+    *** Input - reactivity
+    ceq succesors((ID1 ! INPUT),
+                < ID1 : SU | inputs : (< INPUT : Input | contract : reactive > INPUTS), outputs : (< OUTPUT : Output | > OUTPUTS) > CONF, PORTSET) 
+                = succesors((ID1 ! INPUT), < ID1 : SU | > CONF, ((ID1 ! OUTPUT) , PORTSET)) if not (ID1 ! OUTPUT) in PORTSET .
+
+    eq succesors(PORT, CONF, PORTSET) = PORTSET [owise] .
+endom)
+
+(omod ScenarioAnalyser is
+    protecting ScenarioEnvironment .
+    op loopsInStepNegotiation : AlgebraicLoopSet OidSet Configuration AlgebraicLoopSet -> AlgebraicLoopSet .
+    op tarjan : Configuration -> AlgebraicLoopSet .
+    op dfs : PortSet Environment Configuration -> DFSPair .
+    op dfs1 : EPortId Environment Configuration -> DFSPair .
+
+    var PORT : EPortId .
+    vars REACTIVEPORTS PORTSET SUCCESORS : PortSet .
+    var IM : IndexMap .
+    var CONF : Configuration .
+    var SCCs : SCCMap .
+    vars VISITED VISITED1 VISITED2  : NzNat .
+    vars SCCNUMBER INDEX : Nat .
+    vars ENV ENV1 ENV2 : Environment .
+    vars OLDSTACK STACK SCCSTACK : PortList .
+    vars LOOPS LOOPSet : AlgebraicLoopSet .
+    vars SUIDs REACTIVESUs : OidSet .
+    var SU : SUID .
+    var LOOP : AlgebraicLoop .
+
+    eq loopsInStepNegotiation(empty, SUIDs, CONF, LOOPSet) = LOOPSet .
+    eq loopsInStepNegotiation(LOOPS, empty, CONF, LOOPSet) = LOOPSet .
+    ceq loopsInStepNegotiation(((AlgebraicLoop: PORTSET Type: reactivity) , LOOPS), (SU , SUIDs), CONF, LOOPSet) = 
+            loopsInStepNegotiation(LOOPS, (SU , SUIDs), CONF, ((AlgebraicLoop: PORTSET Type: reactivity) , LOOPSet))
+        if REACTIVEPORTS := getAllReactivePorts(CONF, empty)
+        /\ REACTIVESUs := getSUs(REACTIVEPORTS, empty)
+        /\ SU in REACTIVESUs .
+
+    eq loopsInStepNegotiation((LOOP , LOOPS), SUIDs, CONF, LOOPSet) = 
+        loopsInStepNegotiation(LOOPS, SUIDs, CONF, LOOPSet) [owise] .
+
+    ceq tarjan(CONF) = getLoops(ENV1, CONF)
+       if < ENV1 ; INDEX > := dfs(getAllPorts(CONF, empty), env(nil, empty, 1, 0, createIndexMap(getAllPorts(CONF, empty), empty)), CONF) .
+
+    *** PORT has been visisted before - VISITED is non-zero!
+    ceq dfs((PORT , PORTSET), env(STACK, SCCs, INDEX, SCCNUMBER, ((PORT |-> VISITED), IM)), CONF) = < ENV ; min(VISITED, VISITED1) > 
+       if < ENV ; VISITED1 > := dfs(PORTSET, env(STACK, SCCs, INDEX, SCCNUMBER, ((PORT |-> VISITED) , IM)), CONF) .
+
+    *** Dead end - no successor!
+    eq dfs(empty, ENV, CONF) = < ENV ; 100000 > .
+
+    *** PORT has not been visited before - none of the other cases match
+    ceq dfs((PORT, PORTSET), ENV, CONF) = < ENV2 ; min(VISITED1, VISITED2) >
+        if < ENV1 ; VISITED1 > := dfs1(PORT, ENV, CONF) 
+        /\ < ENV2 ; VISITED2 > := dfs(PORTSET, ENV1, CONF) [owise] .
+
+    *** If we can find a Node with a lower index we use the lower index
+    ceq dfs1(PORT, ENV, CONF) = dfs(SUCCESORS, ENV1, CONF)
+        if SUCCESORS := findSuccesors(PORT, CONF) 
+           /\ ENV1 := addStackIncr(PORT, ENV) 
+           /\ < ENV2 ; INDEX > := dfs(SUCCESORS, ENV1, CONF) 
+           /\ INDEX < getSN(ENV) .
+            
+    *** If we cannot find a Node with a lower index
+    ceq dfs1(PORT, ENV, CONF) = 
+        < env(OLDSTACK, insert(SCCNUMBER, SCCSTACK, SCCs), INDEX, SCCNUMBER + 1, setInfty(SCCSTACK, IM)) ; 100000 >
+                if SUCCESORS := findSuccesors(PORT, CONF) 
+                /\ ENV1 := addStackIncr(PORT, ENV) 
+                /\ < env(STACK, SCCs, INDEX, SCCNUMBER, IM) ; VISITED > := dfs(SUCCESORS, ENV1, CONF) 
+                /\ < SCCSTACK ; OLDSTACK >  := split(PORT, STACK, < nil ; nil > ) [owise] .   
+
+endom)
+
+(omod SCENARIO is 
+   protecting ScenarioAnalyser + FMIVALUESET .
+    sorts GlobalState ChooseValue .
+
+  op scenario : Configuration Configuration -> Configuration . 
+  op validScenario : Configuration Configuration -> Bool .
+  op setup : -> GlobalState .
+  op `{_`} : Configuration -> GlobalState .
+  op calculateSNSet : Configuration -> Configuration .
+  op getSUsOfScenario : Configuration -> Configuration .
+  op getSUIDsOfScenario : Configuration -> OidSet .
+
+  vars OCH SU1 SU2 INPUT OUTPUT : Oid .
+  vars SUs CONNECTIONS INPUTS OUTPUTS CONF SCENARIOMODEL : Configuration .
+  var SUIDs : OidSet .
+  var TYPE : PortType .
+  var VALUE : FMIValue .
+  var FMIVALUESET : FMIValueSet .
+
+  eq getSUsOfScenario(< SU1 : SU | > CONF) = < SU1 : SU | > getSUsOfScenario(CONF) .
+  eq getSUsOfScenario(CONF) = none [owise] .
+
+  eq getSUIDsOfScenario(< SU1 : SU | > CONF) = (SU1, getSUIDsOfScenario(CONF)) .
+  eq getSUIDsOfScenario(CONF) = empty [owise] .
+
+  *** One to one check - change into different input types
+  eq validScenario((SU1 ! OUTPUT ==> SU2 ! INPUT ) CONNECTIONS,  
+  < SU1 : SU | outputs : < OUTPUT : Output | type : TYPE > OUTPUTS > 
+  < SU2 : SU | inputs : < INPUT : Input | type : TYPE > INPUTS > SUs) 
+  = validScenario(CONNECTIONS, < SU1 : SU | > < SU2 : SU | > SUs) .
+  eq validScenario(none, SUs) = true .
+  eq validScenario(CONNECTIONS, SUs) = false [owise] .
+  *** Only one output per input
+
+  *** Calculation of the members of the set of SUs that should be backtracked in the step negotiation
+  ceq calculateSNSet(< SU1 : SU | inputs : (< INPUT : Input | contract : reactive > INPUTS) > 
+                     < SU2 : SU | outputs : (< OUTPUT : Output | > OUTPUTS) > 
+                      (SU2 ! OUTPUT ==> SU1 ! INPUT) 
+                      < OCH : SimulationData | SNSet : (SU1 , SUIDs) > 
+                      CONF) = 
+                      calculateSNSet(< SU1 : SU | > < SU2 : SU | > (SU2 ! OUTPUT ==> SU1 ! INPUT) 
+                      < OCH : SimulationData | SNSet : (SU1 , SU2 , SUIDs) > 
+                      CONF) 
+                      if not SU2 in SUIDs .
+  
+  ceq calculateSNSet(< SU1 : SU | canReject : true > 
+                      < OCH : SimulationData | SNSet : SUIDs > CONF ) = 
+        calculateSNSet(< SU1 : SU | > < OCH : SimulationData | SNSet : (SU1 , SUIDs) > CONF )
+                                         if not SU1 in SUIDs .                             
+  eq calculateSNSet(CONF) = CONF [owise] .
+
+  op choose : FMIValueSet -> ChooseValue [ctor] .
+  rl [choose-value] : choose((VALUE, FMIVALUESET)) => VALUE .
+  subsort FMIValue < ChooseValue .
+
+  op isInitialState : Configuration -> Bool .
+  eq isInitialState(CONF < OCH : SimulationData | >) = false .
+  eq isInitialState(CONF) = true [owise] .
+   
+endom)
+
+(omod SYNTHESIZER is 
+   protecting StepFinder + SCENARIO .
+
+   op performStepNegotiation : Configuration -> Configuration .
+   op performGlobalStep : Configuration -> Configuration .
+   op allSUsinSimulation : OidSet Configuration -> Bool .
+   op simulationStepDone : OidSet Configuration Nat -> Bool .
+   op allSUsinUnloaded : OidSet Configuration -> Bool .
+   op initializationDone : OidSet Configuration -> Bool .
+  
+   vars SU1 SU2 INPUT OUTPUT OCH ALG : Oid .
+   vars SUTIME INPUTTIME TIME : Nat .
+   var VALUE : FMIValue .
+   vars INPUTS OUTPUTS CONF INITSTATE FINALSTATE SUS : Configuration . 
+   var STATE : fmiState .
+   vars ALGO STEPNEGOALGO : ActionList .
+   vars FEEDTHROUGH SUIDs : OidSet .
+   var SUIDsNE : NeOidSet . 
+   vars STEPSIZE NEGOTIATEDSTEPSIZE FUTURETIME ENDTIME : NzNat .
+   var LOOP : AlgebraicLoop .  
+   vars LOOPS SOLVEDLOOPS : AlgebraicLoopSet .  
+   vars PORTVALUES : PortValueMap .
+   vars SUINSTANCE SIMULATIONDATA : Object .
+   var EVENT : Action .
+   vars STATE1 STATE2 : fmiState .
+   var CONTRACT : Contract .
+
+  *** Find instrumentation
+  *** Succedes if there is a contract 
+  ***
+  eq simulationStepDone((SU1, SUIDs), < SU1 : SU | time : TIME, inputs : INPUTS, outputs : OUTPUTS > CONF, TIME) 
+  = TIME > 0 and allDef(INPUTS, TIME) and allDef(OUTPUTS, TIME) and simulationStepDone(SUIDs, CONF, TIME) .
+  eq simulationStepDone(empty, CONF, TIME) = true .
+
+  eq initializationDone((SU1, SUIDs), < SU1 : SU | inputs : INPUTS, outputs : OUTPUTS > CONF) = allDef(INPUTS, 0) and allDef(OUTPUTS, 0) and initializationDone(SUIDs, CONF) .
+  eq initializationDone(empty, CONF) = true .
+
+  *** Step Negotiation
+  ceq performStepNegotiation(CONF 
+                        < OCH : SimulationData | actualStepSize : STEPSIZE, SNSet : SUIDsNE >
+                        < ALG : AlgorithmData |  CosimStep : ALGO > ) = 
+                        < OCH : SimulationData | actualStepSize : NEGOTIATEDSTEPSIZE, SNSet : empty >
+                        < ALG : AlgorithmData |  CosimStep : (ALGO ; EVENT) > CONF
+                              if INITSTATE := CONF < OCH : SimulationData | >
+                              /\ < NEGOTIATEDSTEPSIZE ++ STEPNEGOALGO > := findStep(SUIDsNE, INITSTATE, INITSTATE, emptyList)
+                              /\ EVENT := complexEvent: StepNegotiation SaveSUs: SUIDsNE RestoreSUs: SUIDsNE Actions: STEPNEGOALGO .
+
+  eq performStepNegotiation(CONF < OCH : SimulationData | SNSet : empty > ) 
+                              = CONF < OCH : SimulationData | > .  
+
+  *** All SUS are in the simulation fmistate
+  eq allSUsinSimulation((SU1, SUIDs), < SU1 : SU | fmistate : STATE > SUS) = STATE == Simulation and allSUsinSimulation(SUIDs, SUS) . 
+  eq allSUsinSimulation(empty, CONF) = true .
+
+  *** All SUS unloaded
+  eq allSUsinUnloaded((SU1, SUIDs), < SU1 : SU | fmistate : STATE > SUS) = STATE == Unloaded and allSUsinUnloaded(SUIDs, SUS) . 
+  eq allSUsinUnloaded(empty, CONF) = true .
+
+  ***SUS -> fmiState -> fmiState -> SUS
+  op moveState : OidSet Configuration fmiState fmiState -> Configuration .
+  eq moveState((SU1, SUIDs), < SU1 : SU | fmistate : STATE1 > SUS, STATE1, STATE2) = 
+     < SU1 : SU | fmistate : STATE2 > moveState(SUIDs, SUS, STATE1, STATE2) .
+  eq moveState(empty, CONF, STATE1, STATE2) = CONF .
+
+  op moveToInitialize : OidSet Configuration -> Configuration .
+  eq moveToInitialize((SU1, SUIDs), < SU1 : SU | inputs : INPUTS , outputs : OUTPUTS, fmistate : ExperimentSetup > SUS) = 
+     < SU1 : SU | fmistate : Initialize, inputs : undefPorts(INPUTS, 0), outputs : undefPorts(OUTPUTS, 0) > moveToInitialize(SUIDs, SUS) .
+  eq moveToInitialize(empty, CONF) = CONF .
+
+  *** FMI-standard fmistate transition:
+  *** Initialize all - to have fewer states
+  rl [setupExp] : { < SU1 : SU | fmistate : Instantiated > CONF
+                    < OCH : SimulationData | suids : SUIDsNE > 
+                    < ALG : AlgorithmData |  Initialization : ALGO > 
+                   }
+                 => { 
+                   moveState(SUIDsNE, < SU1 : SU | > CONF, Instantiated, ExperimentSetup)
+                   < ALG : AlgorithmData |  Initialization : (ALGO ; (fmiEvent: CreateExp SUs: SUIDsNE)) > 
+                   < OCH : SimulationData | > 
+                  } .
+
+  rl [init] : { < SU1 : SU | fmistate : ExperimentSetup > CONF
+                 < OCH : SimulationData | suids : SUIDsNE > 
+                 < ALG : AlgorithmData | Initialization : ALGO > 
+               } 
+           => { 
+             moveToInitialize(SUIDsNE, < SU1 : SU | > CONF)
+             < ALG : AlgorithmData | Initialization : (ALGO ; (fmiEvent: EnterInitialization SUs: SUIDsNE)) > 
+             < OCH : SimulationData | > 
+             } .
+           
+  crl [simulate] : { < SU1 : SU | fmistate : Initialize > CONF
+                    < OCH : SimulationData | suids : SUIDsNE, values : empty > 
+                    < ALG : AlgorithmData | Initialization : ALGO > 
+                  } 
+                => { 
+                    moveState(SUIDsNE, < SU1 : SU | > CONF, Initialize, Simulation)
+                    < OCH : SimulationData | > 
+                    < ALG : AlgorithmData | Initialization : (ALGO ; EVENT) > 
+                    }
+                if initializationDone(SUIDsNE, < SU1 : SU | fmistate : Initialize > CONF)
+                /\ EVENT := fmiEvent: ExitInitialization SUs: SUIDsNE .
+
+  crl [terminate] : { < SU1 : SU | time : ENDTIME, fmistate : Simulation > CONF
+                    < OCH : SimulationData | suids : SUIDsNE > 
+                    < ALG : AlgorithmData | Termination : ALGO, endTime : ENDTIME > 
+                    }
+                 => { 
+                   moveState(SUIDsNE, < SU1 : SU | > CONF, Simulation, Terminated)
+                   < ALG : AlgorithmData | Termination : (ALGO ; (fmiEvent: Terminate SUs: SUIDsNE)) > 
+                   < OCH : SimulationData | > 
+                  } 
+                 if simulationStepDone(SUIDsNE, < SU1 : SU | > CONF, ENDTIME) .
+
+  rl [free] : { < SU1 : SU | fmistate : Terminated > CONF
+                < OCH : SimulationData | suids : SUIDsNE > 
+                < ALG : AlgorithmData | Termination : ALGO > 
+              }
+              => { 
+                moveState(SUIDsNE, < SU1 : SU | > CONF, Terminated, InstanceFreed)
+                < ALG : AlgorithmData | Termination : (ALGO ; (fmiEvent: FreeInstance SUs: SUIDsNE)) >
+                < OCH : SimulationData | >  
+              } .
+
+  rl [unload] : { < SU1 : SU | fmistate : InstanceFreed > CONF
+                  < OCH : SimulationData | suids : SUIDsNE > 
+                  < ALG : AlgorithmData | Termination : ALGO > 
+                }
+                => { 
+                  moveState(SUIDsNE, < SU1 : SU | > CONF, InstanceFreed, Unloaded)
+                  < OCH : SimulationData | > 
+                  < ALG : AlgorithmData | Termination : (ALGO ; (fmiEvent: Unload SUs: SUIDsNE)) > 
+                } .
+
+  *** Simulation Procedure
+  *** Perform the global simulation step
+  *** Set input                  
+  ceq performGlobalStep(CONF < SU1 : SU | time : SUTIME, inputs : (< INPUT : Input | time : INPUTTIME, contract : CONTRACT > INPUTS) > 
+          < OCH : SimulationData | values : (((SU1 ! INPUT) |-> < TIME ; VALUE >), PORTVALUES) >
+          < ALG : AlgorithmData | CosimStep : ALGO > 
+          ) = 
+      performGlobalStep(CONF SUINSTANCE 
+            < OCH : SimulationData | values : PORTVALUES >
+            < ALG : AlgorithmData | CosimStep : (ALGO ; EVENT) > 
+            )
+    if (CONTRACT == reactive and TIME > INPUTTIME and INPUTTIME == SUTIME) or (CONTRACT == delayed and TIME == SUTIME and INPUTTIME < SUTIME)    
+      /\ SUINSTANCE := < SU1 : SU | inputs : (< INPUT : Input | value : VALUE, time : TIME > INPUTS) >
+      /\ EVENT := portEvent: Set SU: SU1 PId: INPUT .
+
+  *** Step
+  ceq performGlobalStep(CONF < SU1 : SU | time : TIME, inputs : INPUTS, outputs : OUTPUTS > 
+    < OCH : SimulationData | actualStepSize : STEPSIZE >
+    < ALG : AlgorithmData | CosimStep : ALGO, endTime : ENDTIME > )
+      = 
+    performGlobalStep(CONF SUINSTANCE 
+          < OCH : SimulationData | >
+          < ALG : AlgorithmData | CosimStep : (ALGO ; EVENT) > )
+      if FUTURETIME := TIME + STEPSIZE 
+      /\ canStep(TIME, FUTURETIME, INPUTS, OUTPUTS) and FUTURETIME <= ENDTIME 
+      /\ SUINSTANCE := stepAction(< SU1 : SU | >, STEPSIZE)
+      /\ EVENT := stepEvent: SU1 StepSize: STEPSIZE . 
+
+  *** Get
+  ceq performGlobalStep(CONF 
+    < SU1 : SU | outputs : (< OUTPUT : Output | time : TIME, status : Undef, value : VALUE, dependsOn : FEEDTHROUGH > OUTPUTS), inputs : INPUTS >  
+    <  ALG : AlgorithmData | CosimStep : ALGO > 
+    < OCH : SimulationData | values : PORTVALUES >
+    (SU1 ! OUTPUT ==> SU2 ! INPUT)) 
+    =
+  performGlobalStep(CONF SUINSTANCE (SU1 ! OUTPUT ==> SU2 ! INPUT)
+    <  ALG : AlgorithmData | CosimStep : (ALGO ; EVENT) > 
+    < OCH : SimulationData | values : insert((SU2 ! INPUT), < TIME ; VALUE >, PORTVALUES) >)
+  if feedthroughSatisfied(FEEDTHROUGH, INPUTS, TIME)
+    /\ SUINSTANCE := < SU1 : SU | outputs : (< OUTPUT : Output | status : Def > OUTPUTS) >
+    /\ EVENT := portEvent: Get SU: SU1 PId: OUTPUT . 
+                      
+
+  *** Algebraic Loop - solve and remove loop
+  eq performGlobalStep(CONF 
+      < OCH : SimulationData | unsolvedSCC : (LOOP , LOOPS), solvedSCC : SOLVEDLOOPS > ) = 
+    performGlobalStep(
+      solveLoop(CONF < OCH : SimulationData | unsolvedSCC : LOOPS, solvedSCC : (LOOP , SOLVEDLOOPS) >, LOOP)) [owise] .
+
+  *** Return the configuration is the simulation is done and update the simulation time
+  ceq performGlobalStep(CONF
+        < OCH : SimulationData | simulationTime : TIME, actualStepSize : STEPSIZE, suids : SUIDsNE >) 
+    = CONF < OCH : SimulationData | simulationTime : FUTURETIME >
+  if FUTURETIME := TIME + STEPSIZE
+  /\ simulationStepDone(SUIDsNE, CONF, FUTURETIME) .
+
+
+  *** Reset and start over if the endtime is not reached, reset loopsSolver and StepNegotiation
+  ***ceq performGlobalStep(CONF endTime: ENDTIME) = CONF endTime: ENDTIME
+  ***  if simulationStepDone(CONF) and endTime: ENDTIME .
+
+  *** Initialization Procedure 
+  crl [get-init] :
+    < SU1 : SU | fmistate : Initialize, inputs : INPUTS, 
+      outputs : (< OUTPUT : Output | status : Undef, value : VALUE, dependsOn : FEEDTHROUGH > OUTPUTS) > 
+    (SU1 ! OUTPUT ==> SU2 ! INPUT)
+    < OCH : SimulationData | values : PORTVALUES > 
+    < ALG : AlgorithmData | Initialization : ALGO >
+    => < SU1 : SU | outputs : (< OUTPUT : Output | status : Def > OUTPUTS) > 
+        (SU1 ! OUTPUT ==> SU2 ! INPUT)
+        < OCH : SimulationData | values : insert((SU2 ! INPUT), < 0 ; VALUE >, PORTVALUES) >  
+        < ALG : AlgorithmData | Initialization : (ALGO ; EVENT) >
+  if feedthroughSatisfied(FEEDTHROUGH, INPUTS, 0)
+    /\ EVENT := portEvent: Get SU: SU1 PId: OUTPUT . 
+
+  crl [set-init] : < SU1 : SU | inputs : (< INPUT : Input | status : Undef > INPUTS), fmistate : Initialize > 
+        < OCH : SimulationData | values : (((SU1 ! INPUT) |-> < TIME ; VALUE >), PORTVALUES) >
+        < ALG : AlgorithmData | Initialization : ALGO >
+    => < SU1 : SU | inputs : (< INPUT : Input | status : Def, value : VALUE > INPUTS ) >
+       < OCH : SimulationData | values : PORTVALUES >
+       < ALG : AlgorithmData | Initialization : (ALGO ; EVENT) >
+    if EVENT := portEvent: Set SU: SU1 PId: INPUT .
+
+  ***rl [init-loop] : CONF unsolvedSCC: (L ;; LOOPS) => solveLoop(CONF unsolvedSCC: LOOPS, L) .                 
+
+  ***If the scenario contains SUS that require step negotiation
+  ***The step negotiation
+  crl [stepNego] : { CONF  < OCH : SimulationData | SNSet : SUIDsNE > } => 
+          { performStepNegotiation(CONF < OCH : SimulationData | suids : SUIDsNE > ) }
+          if allSUsinSimulation(SUIDsNE, CONF) .
+ 
+
+  crl [simulationStep]: { 
+        CONF 
+        < OCH : SimulationData | SNSet : empty, simulationTime : TIME, suids : SUIDsNE > 
+        < ALG : AlgorithmData | endTime : ENDTIME > } => 
+          { 
+            performGlobalStep(CONF < OCH : SimulationData | > < ALG : AlgorithmData | >) 
+          }
+          if allSUsinSimulation(SUIDsNE, CONF) and TIME < ENDTIME .
+
+  op getOrchestrator : Configuration -> Configuration .
+  eq getOrchestrator(CONF < OCH : AlgorithmData | >) = < OCH : AlgorithmData | > .
+  eq getOrchestrator(CONF) = none [owise] .
+
+  crl [getAlgortihm]: { INITSTATE } => { getOrchestrator(FINALSTATE) }
+      if isInitialState(INITSTATE)
+      /\ LOOPS := tarjan(INITSTATE)
+      /\ SUIDsNE := getSUIDsOfScenario(INITSTATE)
+      /\ SIMULATIONDATA := initialOrchestrationData(1,LOOPS,SUIDsNE)
+      /\ CONF := calculateSNSet(INITSTATE) SIMULATIONDATA initialAlgorithmData(1)
+      /\ {CONF} => { FINALSTATE } 
+      /\ allSUsinUnloaded(SUIDsNE, FINALSTATE) .
+
+
+endom)
+
+(omod AlgorithmVerifier is 
+    protecting SYNTHESIZER .
+    sorts SimulationState InstrumentationState .
+    vars SU1 SU2 ALG OUTPUT INPUT OCH : Oid .
+    vars RESTALGO ALGO STEPNEGOALGO : ActionList .
+    vars OUTPUTS INPUTS CONF SAVEDSUs INITSTATE STATE FINALSTATE : Configuration .
+    vars STEPSIZE FUTURETIME NEGOTIATEDSTEPSIZE ENDTIME : NzNat .
+    vars TIME SUTIME INPUTTIME NATVALUE ITERATION : Nat .
+    var VALUE : FMIValue .
+    vars PORTVALUES GUESSES : PortValueMap .
+    vars FEEDTHROUGH SUIDs : OidSet .
+    var SUIDsNE : NeOidSet . 
+    var CONTRACT : Contract .
+    vars SUINSTANCE ORCHESTRATOR SIMULATIONDATA ALGORITHMDATA : Object .
+    var LOOPS : AlgebraicLoopSet .
+    var PORTSET : PortSet .
+    var UNITIALIZEDCONF : [Configuration] .
+
+    *** To run multiple step
+    op runs_on_ : Nat Configuration -> SimulationState [ctor] . 
+
+    crl [run-iteration]: runs s ITERATION on INITSTATE =>
+        runs ITERATION on FINALSTATE 
+        if runAnyAlgorithm INITSTATE => 
+            run: < ALG : AlgorithmData | Initialization : emptyList, CosimStep : emptyList, Termination : emptyList, ATTS:AttributeSet > 
+            on: FINALSTATE .
+
+    op run:_on:_with:_ : Object Configuration Object -> SimulationState [ctor]. 
+
+    *** Not to be touched!
+    op run:_on:_ : Object Configuration -> SimulationState [ctor]. 
+    op runAnyAlgorithm_ : Configuration -> SimulationState [ctor] .
+    crl [runAnyAlg] : runAnyAlgorithm INITSTATE => run: ORCHESTRATOR on: INITSTATE with: SIMULATIONDATA
+    if LOOPS := tarjan(INITSTATE)
+      /\ SUIDsNE := getSUIDsOfScenario(INITSTATE)
+      /\ SIMULATIONDATA := initialOrchestrationData(1,LOOPS,SUIDsNE)
+      /\ ALGORITHMDATA := initialAlgorithmData(1)
+      /\ CONF := calculateSNSet(INITSTATE ALGORITHMDATA) SIMULATIONDATA 
+      /\ {CONF} => { FINALSTATE } 
+      /\ ORCHESTRATOR := getOrchestrator(FINALSTATE)
+      /\ allSUsinUnloaded(SUIDsNE, FINALSTATE) .
+
+    ops findContracts findInstr : Configuration -> InstrumentationState [ctor] .
+    subsort Configuration < InstrumentationState .
+    
+    *** Everything that takes something frozen into something static should be frozen
+    op allConstraintsDefined : Configuration -> Bool [frozen] .
+    eq allConstraintsDefined(< SU1 : SU | inputs : (< INPUT : Input | contract : noContract > INPUTS) > CONF) = false .
+    eq allConstraintsDefined(CONF) = true [owise] .
+
+    rl [insr-delayed]: 
+        findInstr(< SU1 : SU | inputs : (< INPUT : Input | contract : noContract > INPUTS) > CONF)
+        =>
+        findInstr(< SU1 : SU | inputs : (< INPUT : Input | contract : delayed > INPUTS) > CONF) .
+
+    rl [insr-reactive]: 
+        findInstr(< SU1 : SU | inputs : (< INPUT : Input | contract : noContract > INPUTS) > CONF)
+        =>
+        findInstr(< SU1 : SU | inputs : (< INPUT : Input | contract : reactive > INPUTS) > CONF) .
+
+    crl [remove-findInstr]: findInstr(CONF) => CONF 
+        if allConstraintsDefined(CONF) .
+        
+    *** Find an implementation such that when it runs the algortihm it satisfies the property defined by the user
+    crl [findInstrumentation]: findContracts(INITSTATE) => CONF
+        if findInstr(INITSTATE) => CONF
+        /\ empty == tarjan(CONF) *** We do not allow loops in the found configuration
+        /\ runAnyAlgorithm CONF => run: ORCHESTRATOR on: FINALSTATE with: SIMULATIONDATA
+        /\ positive(FINALSTATE) .
+
+    op positive : Configuration -> Bool .
+    eq positive(CONF < "ctrl" : SU | inputs : (< "waterlevel" : Input | value : < NATVALUE > > INPUTS) >) = NATVALUE > 0 .
+
+    *** Select the a value for parameter we want to do DSE on.
+    op selectParams : [Configuration] -> [Configuration] .
+    crl [dse] : selectParams(UNITIALIZEDCONF) => CONF 
+    if UNITIALIZEDCONF => CONF
+    /\ runAnyAlgorithm CONF => 
+        run: < ALG : AlgorithmData | Initialization : emptyList, CosimStep : emptyList, Termination : emptyList, ATTS:AttributeSet > 
+        on: FINALSTATE
+        with: SIMULATIONDATA
+    /\ above10(FINALSTATE) .
+
+  op above10 : Configuration -> Bool .
+  eq above10(CONF < "tank" : SU | localState : ( "waterlevel" |-> < NATVALUE >) >) = NATVALUE > 10 .
+
+  *** FMI-standard fmistate transition:
+  rl [setExp] : 
+    run: < ALG : AlgorithmData | Initialization : ((fmiEvent: CreateExp SUs: SUIDsNE) ; RESTALGO) > 
+    on: < SU1 : SU | fmistate : Instantiated > CONF
+    with: SIMULATIONDATA  
+    => 
+    run: < ALG : AlgorithmData | Initialization : RESTALGO > 
+    on: moveState(SUIDsNE, < SU1 : SU | > CONF, Instantiated, ExperimentSetup)
+    with: SIMULATIONDATA .
+
+  rl [init] : 
+    run: < ALG : AlgorithmData | Initialization : ((fmiEvent: EnterInitialization SUs: SUIDsNE) ; RESTALGO )> 
+    on: < SU1 : SU | fmistate : ExperimentSetup > CONF
+    with: SIMULATIONDATA         
+    => 
+    run: < ALG : AlgorithmData | Initialization : RESTALGO > 
+    on:  moveToInitialize(SUIDsNE, < SU1 : SU | > CONF)  
+    with: SIMULATIONDATA .
+
+  crl [simulate] : 
+    run: < ALG : AlgorithmData | Initialization : (fmiEvent: ExitInitialization SUs: SUIDsNE) >
+    on:  < SU1 : SU | fmistate : Initialize > CONF  
+    with: < OCH : SimulationData | values : empty > 
+    => 
+    run: < ALG : AlgorithmData | Initialization : emptyList >  
+    on:  moveState(SUIDsNE, < SU1 : SU | > CONF, Initialize, Simulation) 
+    with: < OCH : SimulationData | > 
+if initializationDone(SUIDsNE, < SU1 : SU | fmistate : Initialize > CONF) .
+
+  crl [terminate] : 
+    run: < ALG : AlgorithmData | endTime : TIME, CosimStep : emptyList, Termination : ((fmiEvent: Terminate SUs: SUIDsNE) ; RESTALGO) >
+    on: < SU1 : SU | time : ENDTIME, inputs : INPUTS , outputs : OUTPUTS , fmistate : Simulation > CONF 
+    with: SIMULATIONDATA
+    => 
+    run: < ALG : AlgorithmData | Termination : RESTALGO > 
+    on: moveState(SUIDsNE, < SU1 : SU | > CONF, Simulation, Terminated) 
+    with: SIMULATIONDATA
+if allDef(OUTPUTS, ENDTIME) and allDef(INPUTS, ENDTIME) .
+
+  rl [free] : 
+  run: < ALG : AlgorithmData | Termination : ((fmiEvent: FreeInstance SUs: SUIDsNE) ; RESTALGO) >
+  on:  < SU1 : SU | fmistate : Terminated > CONF 
+  with: SIMULATIONDATA
+  => 
+  run: < ALG : AlgorithmData | Termination : RESTALGO >
+  on:  moveState(SUIDsNE, < SU1 : SU | > CONF, Terminated, InstanceFreed) 
+  with: SIMULATIONDATA .
+
+  rl [unload] : 
+  run: < ALG : AlgorithmData | Termination : ((fmiEvent: Unload SUs: SUIDsNE) ; RESTALGO) >
+  on: < SU1 : SU | fmistate : InstanceFreed > CONF 
+  with: SIMULATIONDATA
+  => run: < ALG : AlgorithmData | Termination : RESTALGO > 
+  on: moveState(SUIDsNE, < SU1 : SU | > CONF, InstanceFreed, Unloaded) 
+  with: SIMULATIONDATA .
+
+*** Initialization
+crl [get-init] :
+    run:  < ALG : AlgorithmData | Initialization : ((portEvent: Get SU: SU1 PId: OUTPUT) ; RESTALGO) > 
+    on: < SU1 : SU | fmistate : Initialize, 
+            outputs : (< OUTPUT : Output | status : Undef, value : VALUE, dependsOn : FEEDTHROUGH > OUTPUTS), 
+            inputs : INPUTS > 
+            (SU1 ! OUTPUT ==> SU2 ! INPUT) CONF
+    with: < OCH : SimulationData | values : PORTVALUES >
+    => 
+    run: < ALG : AlgorithmData | Initialization : RESTALGO >
+    on: < SU1 : SU | outputs : (< OUTPUT : Output | status : Def > OUTPUTS) > 
+            (SU1 ! OUTPUT ==> SU2 ! INPUT) CONF             
+    with: < OCH : SimulationData | values : insert((SU2 ! INPUT), < 0 ; VALUE >, PORTVALUES) >
+    if feedthroughSatisfied(FEEDTHROUGH, INPUTS, 0) .
+
+   *** Inputs can only rely on: one connection 
+rl [set-init] : 
+    run: < ALG : AlgorithmData | Initialization : ((portEvent: Set SU: SU1 PId: INPUT)  ; RESTALGO) >
+    on:  < SU1 : SU | inputs : (< INPUT : Input | status : Undef > INPUTS), fmistate : Initialize > CONF
+    with: < OCH : SimulationData | values : (((SU1 ! INPUT) |-> < TIME ; VALUE >), PORTVALUES) >
+    => 
+    run: < ALG : AlgorithmData | Initialization : RESTALGO >
+    on:  < SU1 : SU | inputs : (< INPUT : Input | time : TIME, status : Def, value : VALUE > INPUTS ) > CONF
+    with: < OCH : SimulationData | values : PORTVALUES > .
+
+    *** Simulation
+crl [get] : 
+    run: < ALG : AlgorithmData | CosimStep : ((portEvent: Get SU: SU1 PId: OUTPUT) ; RESTALGO) >
+    on: CONF
+        < SU1 : SU | outputs : (< OUTPUT : Output | time : TIME, value : VALUE, dependsOn : FEEDTHROUGH > OUTPUTS), inputs : INPUTS > 
+        ( SU1 ! OUTPUT ==> SU2 ! INPUT)
+    with: < OCH : SimulationData | values : PORTVALUES >
+    => 
+    run: < ALG : AlgorithmData | CosimStep : RESTALGO >
+    on: CONF < SU1 : SU | outputs : (< OUTPUT : Output | status : Def > OUTPUTS) > 
+                ( SU1 ! OUTPUT ==> SU2 ! INPUT)
+    with: < OCH : SimulationData | values : insert((SU2 ! INPUT), < TIME ; VALUE >, PORTVALUES) > 
+if feedthroughSatisfied(FEEDTHROUGH, INPUTS, TIME) .
+                
+crl [set] : 
+    run: < ALG : AlgorithmData | CosimStep : ((portEvent: Set SU: SU1 PId: INPUT) ; RESTALGO) >
+    on: CONF < SU1 : SU | time : SUTIME, fmistate : Simulation, inputs : (< INPUT : Input | contract :  CONTRACT, time : INPUTTIME > INPUTS) >
+    with: < OCH : SimulationData | values : (((SU1 ! INPUT) |-> < TIME ; VALUE >), PORTVALUES) >
+    => 
+    run: < ALG : AlgorithmData | CosimStep : RESTALGO >
+    on: CONF < SU1 : SU | inputs : (< INPUT : Input | time : TIME, value : VALUE > INPUTS) > 
+    with: < OCH : SimulationData | values : PORTVALUES >
+if ((CONTRACT == reactive and (TIME > INPUTTIME) and INPUTTIME == SUTIME) or (CONTRACT == delayed and TIME == SUTIME)) .
+
+crl [step-action] : 
+    run: < ALG : AlgorithmData | CosimStep : ((stepEvent: SU1 StepSize: STEPSIZE) ; RESTALGO) >
+    on: CONF < SU1 : SU | time : TIME, inputs : INPUTS, outputs : OUTPUTS, fmistate : Simulation >
+    with: SIMULATIONDATA
+    => 
+    run: < ALG : AlgorithmData | CosimStep : RESTALGO >
+    on: CONF O:Object
+    with: SIMULATIONDATA
+if FUTURETIME := TIME + STEPSIZE
+/\ canStep(TIME, FUTURETIME, INPUTS, OUTPUTS) 
+/\ step(< SU1 : SU | >, STEPSIZE) => O:Object .
+
+*** Next step look at Complex scenarios
+*** Right now we just ignore them in the simulation
+rl [step-negotiation] :
+    run: < ALG : AlgorithmData | CosimStep : 
+            ((complexEvent: StepNegotiation SaveSUs: SUIDsNE RestoreSUs: SUIDsNE Actions: ALGO) ; RESTALGO) >
+    on: CONF
+    with: SIMULATIONDATA
+    => 
+    run: < ALG : AlgorithmData | CosimStep : RESTALGO > 
+    on: CONF 
+    with: SIMULATIONDATA .
+
+    
+rl [algeraic-loop] :
+    run: < ALG : AlgorithmData | CosimStep : 
+            ((complexEvent: Loop SaveSUs: SUIDs RestoreSUs: SUIDs Actions: ALGO) ; RESTALGO) >
+    on: CONF
+    with: SIMULATIONDATA
+    => 
+    run: < ALG : AlgorithmData | CosimStep : RESTALGO > 
+    on: CONF 
+    with: SIMULATIONDATA .
+
+endom)
