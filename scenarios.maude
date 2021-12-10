@@ -2,7 +2,7 @@
 load WRLA
 
 (omod ScenarioTest is
-    protecting AlgorithmVerifier .
+    protecting SYNTHESIZER .
 
   vars SUs CONNECTIONS CONF SCENARIOMODEL : Configuration .
   vars NATVALUE HIGH LOW WATERLEVEL WATERLEVELOUT VALVESTATE TIME : Nat .
@@ -22,7 +22,7 @@ eq externalConnection = ("tank" ! "waterlevel" ==> "ctrl" ! "waterlevel") ("ctrl
 
 eq simulationUnits =   (< "tank" : SU | path : "", parameters : ("flow" |-> < 100 >), localState : ( "waterlevel" |-> < 0 > ) , time : 0, inputs : (< "valveState" : Input | value : < 0 >, type : integer, time : 0, contract : delayed, status : Undef  >), outputs : (< "waterlevel" : Output | value : < 0 >, type : integer, time : 0, status : Undef, dependsOn : empty >), fmistate : Instantiated, canReject : false >)
 
-  (< "ctrl" : SU | path : "", parameters : (("high" |-> < 5 >) , ("low" |-> < 0 >)), localState : ( "valve" |-> < false >), time : 0, inputs : (< "waterlevel" : Input | value : < 0 >, type : integer, time : 0, contract : delayed, status : Undef  >), outputs : (< "valveState" : Output | value : < 0 >, type : integer, time : 0, status : Undef, dependsOn : empty >), fmistate : Instantiated, canReject : false >) .
+  (< "ctrl" : SU | path : "", parameters : (("high" |-> < 5 >) , ("low" |-> < 0 >)), localState : ( "valve" |-> < false >), time : 0, inputs : (< "waterlevel" : Input | value : < 0 >, type : integer, time : 0, contract : reactive, status : Undef  >), outputs : (< "valveState" : Output | value : < 0 >, type : integer, time : 0, status : Undef, dependsOn : empty >), fmistate : Instantiated, canReject : false >) .
 
 eq simulationUnitsNotInstrumented = 
   (< "tank" : SU | path : "", parameters : ("flow" |-> < 100 >), localState : ( "waterlevel" |-> < 0 > ) , time : 0, inputs : (< "valveState" : Input | value : < 0 >, type : integer, time : 0, contract : noContract, status : Undef  >), outputs : (< "waterlevel" : Output | value : < 0 >, type : integer, time : 0, status : Undef, dependsOn : empty >), fmistate : Instantiated, canReject : false >)
@@ -92,6 +92,7 @@ endom)
 eof
 *** Search Commands
 
+( search init =>! C:GlobalState . )
 
 *** find Instrumentations
 ( search findContracts(initConfiguration) =>! C:Configuration . )
@@ -108,6 +109,3 @@ eof
 *** Search for bad states - safety properties
 ( search (runAnyAlgorithm initConfiguration) =>* run: O:Object on: (C:Configuration 
                 < "tank" : SU | outputs : < "waterlevel" : Output | value : < 100 > > > ) . )
-
-
-              
