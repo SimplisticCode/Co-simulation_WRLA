@@ -544,8 +544,6 @@ endom)
 
 endom)
 
-load StepFinder 
-
 (fmod ENVIRONMENT is
   protecting SCC-MAP + INDEX-MAP + SimulationUnit .
   sort Environment .
